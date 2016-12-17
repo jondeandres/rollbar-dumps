@@ -1,0 +1,171 @@
+# Copyright 2009 Martin Carpenter. All rights reserved.
+
+# Redistribution and use in source and binary forms, with or without modification, are
+# permitted provided that the following conditions are met:
+
+#    1. Redistributions of source code must retain the above copyright notice, this list of
+#       conditions and the following disclaimer.
+
+#    2. Redistributions in binary form must reproduce the above copyright notice, this list
+#       of conditions and the following disclaimer in the documentation and/or other materials
+#       provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY Martin Carpenter ``AS IS'' AND ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+# FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL Martin Carpenter OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+# ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+# NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+# ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# The views and conclusions contained in the software and documentation are those of the
+# authors and should not be interpreted as representing official policies, either expressed
+# or implied, of Martin Carpenter.
+
+
+grammar GdbResponse
+
+  # A generic response from GDB.
+  rule response
+    initial_output / output / notification / final_output
+  end
+
+  # The response returned by GDB when we first connect.
+  rule initial_output
+    terminator #<InitialResponse> this throws extension error?
+  end
+
+  rule exception
+    "Program terminated with signal" signal exception_message
+  end
+
+  rule signal
+    . ","
+  end
+
+  rule exception_message
+    .
+  end
+
+  # The response returned by GDB when we quit (-gdb-exit).
+  rule final_output
+    _token:token? '^exit' eol <Rollbar::Dumps::FinalResponse>
+  end
+
+  # A generic GDB response.
+  rule output
+    _oob_records:oob_record* _result_record:result_record _oob_records:oob_record* terminator <Rollbar::Dumps::Response>
+  end
+
+  # An asynchronous GDB notification.
+  rule notification
+    _oob_records:oob_record+ terminator <Rollbar::Dumps::Notification>
+  end
+
+  # A result record returned from a Rubug::Gdb command.
+  rule result_record
+    _token:token? _record_type:'^' _record_class:result_class _results:(comma _result:result)* eol <Rollbar::Dumps::ResultRecord>
+  end
+
+  # An asynchronous (or out-of-band) record, may be an async or stream record.
+  rule oob_record
+    ( _token:token? _record_type:'*' _record_class:async_class _results:(comma _result:result)* eol <Rollbar::Dumps::AsyncExecRecord> ) /
+    ( _token:token? _record_type:'*' _record_class:result_class _results:(comma _result:result)* eol <Rollbar::Dumps::AsyncExecRecord> ) /
+    ( _token:token? _record_type:'+' _record_class:async_class _results:(comma _result:result)* eol <Rollbar::Dumps::AsyncStatusRecord> ) /
+    ( _token:token? _record_type:'=' _record_class:async_class _results:(comma _result:result)* eol <Rollbar::Dumps::AsyncNotifyRecord> ) /
+    ( _token:token? _record_type:'~' _results:c_string eol <Rollbar::Dumps::StreamConsoleRecord> ) /
+    ( _token:token? _record_type:'@' _results:c_string eol <Rollbar::Dumps::StreamTargetRecord> ) /
+    ( _token:token? _record_type:'&' _results:c_string eol <Rollbar::Dumps::StreamLogRecord> )
+  end
+
+  rule result_class
+    'done' / 'running' / 'connected' / 'error' / 'exit'
+  end
+
+  rule async_class
+    #'stopped' /
+    'stopped' / 'thread-group-started' / 'thread-group-added' / 'thread-created' / 'thread-exited' / 'thread-group-exited' / 'library-loaded' / 'breakpoint-modified'
+  end
+
+  rule result
+    _name:variable '=' _value:value <Rollbar::Dumps::Result>
+  end
+
+  rule variable
+    # Any string - strings may contain dashes.
+    [a-zA-Z] [a-zA-Z0-9\-]*  <Rollbar::Dumps::Name>
+  end
+
+  rule value
+    ( const / tuple / list )
+  end
+
+  rule const
+    c_string
+  end
+
+  rule comma
+    ',' <Rollbar::Dumps::Punctuation>
+  end
+
+  rule openbrace
+    '{' <Rollbar::Dumps::Punctuation>
+  end
+
+  rule closebrace
+    '}' <Rollbar::Dumps::Punctuation>
+  end
+
+  rule openbracket
+    '[' <Rollbar::Dumps::Punctuation>
+  end
+
+  rule closebracket
+    ']' <Rollbar::Dumps::Punctuation>
+  end
+
+  # A tuple is a commented separated list of name-value pairs inside {}.
+  rule tuple
+    openbrace closebrace <Rollbar::Dumps::Tuple> / openbrace result (comma result)* closebrace <Rollbar::Dumps::Tuple> # Is there a better -- more linear -- way to write this?
+  end
+
+  # A list is either a list of values (constants, tuples, lists) inside [], or a list of name-value pairs inside [].
+  rule list
+    openbracket closebracket <Rollbar::Dumps::List> / openbracket value (comma value)* closebracket <Rollbar::Dumps::List> / openbracket result (comma result)* closebracket <Rollbar::Dumps::List>
+  end
+
+  rule c_string
+    '"' _unquoted_c_string:( c_escaped_quote / c_char )* '"' <Rollbar::Dumps::Const>
+  end
+
+  rule c_escaped_quote
+    '\\"'
+  end
+
+  rule c_char
+    ( !'"' . )
+  end
+
+  # Any sequence of digits
+  rule token
+    [\d]+
+  end
+
+  # Response terminator.
+  rule terminator
+    '(gdb)' hspace* eol # XXX hspace* not in spec
+  end
+
+  # Horizontal whitespace (htab or space character).
+  rule hspace
+    [ \t]
+  end
+
+  # End of line.
+  rule eol
+    "\r\n" / "\n"
+  end
+
+end

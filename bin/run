@@ -1,0 +1,12 @@
+require 'rollbar/dumps/version'
+require 'rollbar/dumps/proxy'
+require 'rollbar/dumps/builder'
+require 'rollbar/dumps/sender'
+
+proxy = Rollbar::Dumps::Proxy.new(
+  :core => ARGV[1],
+  :binary => ARGV[0]
+)
+builder = Rollbar::Dumps::Builder.new(proxy)
+sender = Rollbar::Dumps::Sender.new
+sender.send(builder.to_h)
