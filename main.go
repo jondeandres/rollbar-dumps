@@ -1,9 +1,13 @@
 package main
 
+import (
+	"os"
+)
+
 
 func main() {
-	binary := "/home/jon/rollbar/rollbar-dumps/sample"
-	core := "/home/jon/rollbar/rollbar-dumps/core"
+	binary := os.Args[1]
+	core := os.Args[2]
 	arguments := []string{"-n", "-q", "-i", "mi2", binary, core}
 
 	gdb := NewGdb(arguments)
